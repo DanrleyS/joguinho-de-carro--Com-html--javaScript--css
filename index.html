@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jogo de Carro</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border: 1px solid #000;
+        }
+
+        .controls {
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        button {
+            font-size: 16px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            background-color: #007bff;
+            cursor: pointer;
+            margin: 5px;
+            transition: background-color 0.3s, transform 0.3s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+            transform: scale(1.05);
+        }
+
+        button:active {
+            background-color: #00408d;
+            transform: scale(1);
+        }
+
+        button:focus {
+            outline: none;
+        }
+
+        .controls-container {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .controls-container > button {
+            margin: 5px;
+        }
+
+        .time-container {
+            margin-top: 20px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div class="controls">
+        <div class="controls-container">
+            <button id="decreaseSpeed">Diminuir Velocidade</button>
+            <button id="resetSpeed">Velocidade Normal</button>
+            <button id="increaseSpeed">Aumentar Velocidade</button>
+            <button id="increaseDifficulty">Aumentar Dificuldade</button>
+            <button id="decreaseDifficulty">Diminuir Dificuldade</button>
+        </div>
+        <div class="time-container">
+            Tempo Percorrido: <span id="timer">00:00</span>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = 800;
+        canvas.height = 600;
+
+        const carWidth = 50;
+        const carHeight = 100;
+        const obstacleWidth = 50;
+        const obstacleHeight = 100;
+        let gameSpeed = 1; // Velocidade global do jogo
+        const defaultGameSpeed = 1;
+        const baseCarSpeed = 5; // Velocidade base do carro
+        const baseObstacleSpeed = 3; // Velocidade base dos obstáculos
+        let carSpeed = baseCarSpeed * gameSpeed;
+        let obstacleSpeed = baseObstacleSpeed * gameSpeed;
+        const obstacles = [];
+        let difficulty = 1; // Nível de dificuldade (número de obstáculos por intervalo)
+        const maxDifficulty = 10; // Dificuldade máxima
+        const minDifficulty = 1; // Dificuldade mínima
+
+        // Imagens
+        const carImage = new Image();
+        const obstacleImage = new Image();
+        const gameOverImage = new Image();
+        const trackImage = new Image();
+
+        let carX = canvas.width / 2 - carWidth / 2;
+        let carY = canvas.height - carHeight - 10;
+        let isLeftPressed = false;
+        let isRightPressed = false;
+        let isUpPressed = false;
+        let isDownPressed = false;
+        let isGameOver = false;
+        let obstacleInterval; // Para gerenciar o intervalo de criação de obstáculos
+
+        // Variáveis para o contador de tempo
+        let startTime;
+        let elapsedTime = 0;
+
+        function imagesLoaded() {
+            return carImage.complete && obstacleImage.complete && gameOverImage.complete && trackImage.complete;
+        }
+
+        function startGame() {
+            if (imagesLoaded()) {
+                startTime = Date.now(); // Marca o início do jogo
+                gameLoop();
+            } else {
+                setTimeout(startGame, 100); // Verifica novamente após 100ms
+            }
+        }
+
+        function drawTrack() {
+            ctx.drawImage(trackImage, 0, 0, canvas.width, canvas.height);
+        }
+
+        function drawCar() {
+            ctx.drawImage(carImage, carX, carY, carWidth, carHeight);
+        }
+
+        function drawObstacle(obstacle) {
+            ctx.drawImage(obstacleImage, obstacle.x, obstacle.y, obstacleWidth, obstacleHeight);
+        }
+
+        function drawGameOver() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.drawImage(gameOverImage, canvas.width / 2 - 150, canvas.height / 2 - 100, 300, 200);
+            ctx.fillStyle = 'white';
+            ctx.font = '30px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Pressione R para Reiniciar', canvas.width / 2, canvas.height / 2 + 150);
+        }
+
+        function createObstacles() {
+            for (let i = 0; i < difficulty; i++) {
+                const x = Math.random() * (canvas.width - obstacleWidth);
+                const y = -obstacleHeight;
+                obstacles.push({ x, y });
+            }
+        }
+
+        function updateObstacles() {
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].y += obstacleSpeed;
+                if (obstacles[i].y > canvas.height) {
+                    obstacles.splice(i, 1);
+                }
+            }
+        }
+
+        function detectCollision() {
+            for (const obstacle of obstacles) {
+                if (
+                    carX < obstacle.x + obstacleWidth &&
+                    carX + carWidth > obstacle.x &&
+                    carY < obstacle.y + obstacleHeight &&
+                    carY + carHeight > obstacle.y
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function formatTime(ms) {
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const displaySeconds = seconds % 60;
+            return `${String(minutes).padStart(2, '0')}:${String(displaySeconds).padStart(2, '0')}`;
+        }
+
+        function draw() {
+            if (isGameOver) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawGameOver();
+                return;
+            }
+
+            drawTrack(); // Desenhar a pista
+            drawCar();
+            for (const obstacle of obstacles) {
+                drawObstacle(obstacle);
+            }
+
+            updateObstacles();
+
+            if (detectCollision()) {
+                isGameOver = true;
+            }
+        }
+
+        function update() {
+            carSpeed = baseCarSpeed * gameSpeed;
+            obstacleSpeed = baseObstacleSpeed * gameSpeed;
+
+            if (isLeftPressed && carX > 0) {
+                carX -= carSpeed;
+            }
+            if (isRightPressed && carX < canvas.width - carWidth) {
+                carX += carSpeed;
+            }
+            if (isUpPressed && carY > 0) {
+                carY -= carSpeed;
+            }
+            if (isDownPressed && carY < canvas.height - carHeight) {
+                carY += carSpeed;
+            }
+        }
+
+        function gameLoop() {
+            if (!isGameOver) {
+                const currentTime = Date.now();
+                elapsedTime = currentTime - startTime; // Calcula o tempo decorrido
+                document.getElementById('timer').textContent = formatTime(elapsedTime); // Atualiza o tempo na tela
+            }
+
+            draw();
+            update();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resetGame() {
+            carX = canvas.width / 2 - carWidth / 2;
+            carY = canvas.height - carHeight - 10;
+            obstacles.length = 0;
+            isGameOver = false;
+            startTime = Date.now(); // Reinicia o contador de tempo
+        }
+
+        function adjustGameSpeed(amount) {
+            gameSpeed += amount;
+            if (gameSpeed < 0.5) gameSpeed = 0.5; // Velocidade mínima
+            if (gameSpeed > 5) gameSpeed = 5; // Velocidade máxima
+            console.log(`Velocidade do jogo ajustada para ${gameSpeed}`);
+            clearInterval(obstacleInterval);
+            obstacleInterval = setInterval(createObstacles, 2000 / gameSpeed);
+        }
+
+        function increaseDifficulty() {
+            if (difficulty < maxDifficulty) {
+                difficulty++;
+                console.log(`Dificuldade aumentada para ${difficulty}`);
+            } else {
+                console.log(`Dificuldade máxima atingida`);
+            }
+        }
+
+        function decreaseDifficulty() {
+            if (difficulty > minDifficulty) {
+                difficulty--;
+                console.log(`Dificuldade diminuída para ${difficulty}`);
+            } else {
+                console.log(`Dificuldade mínima atingida`);
+            }
+        }
+
+        document.getElementById('decreaseSpeed').addEventListener('click', () => adjustGameSpeed(-0.5));
+        document.getElementById('resetSpeed').addEventListener('click', () => {
+            gameSpeed = defaultGameSpeed;
+            console.log(`Velocidade do jogo redefinida para ${gameSpeed}`);
+            clearInterval(obstacleInterval);
+            obstacleInterval = setInterval(createObstacles, 2000 / gameSpeed);
+        });
+        document.getElementById('increaseSpeed').addEventListener('click', () => adjustGameSpeed(0.5));
+        document.getElementById('increaseDifficulty').addEventListener('click', increaseDifficulty);
+        document.getElementById('decreaseDifficulty').addEventListener('click', decreaseDifficulty);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                isLeftPressed = true;
+            }
+            if (e.key === 'ArrowRight') {
+                isRightPressed = true;
+            }
+            if (e.key === 'ArrowUp') {
+                isUpPressed = true;
+            }
+            if (e.key === 'ArrowDown') {
+                isDownPressed = true;
+            }
+            if (e.key === 'r' || e.key === 'R') {
+                if (isGameOver) {
+                    resetGame();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft') {
+                isLeftPressed = false;
+            }
+            if (e.key === 'ArrowRight') {
+                isRightPressed = false;
+            }
+            if (e.key === 'ArrowUp') {
+                isUpPressed = false;
+            }
+            if (e.key === 'ArrowDown') {
+                isDownPressed = false;
+            }
+        });
+
+        obstacleInterval = setInterval(createObstacles, 2000 / gameSpeed); // Ajusta o intervalo de criação de obstáculos
+
+        // Inicia o jogo somente após todas as imagens estarem carregadas
+        carImage.src = 'images/car-pronto.png';
+        obstacleImage.src = 'images/obstacle-pronto.png';
+        gameOverImage.src = 'images/gameover.png';
+        trackImage.src = 'images/track.png';
+
+        startGame();
+    </script>
+</body>
+</html>
